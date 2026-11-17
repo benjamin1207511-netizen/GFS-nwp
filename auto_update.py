@@ -185,13 +185,15 @@ def validate_build(build_dir: Path, run_text: str) -> None:
         if parse_run(manifest.get("run")) != parse_run(run_text):
             raise RuntimeError("%s 的起报场不正确" % subdir)
         frames = manifest.get("frames") or []
-        if len(frames) != len(gfs_chart.LEADS):
-            raise RuntimeError("%s 的帧数不是 %d" % (subdir, len(gfs_chart.LEADS)))
+        want = 1 if spec.get("kind") == "overview" else len(gfs_chart.LEADS)
+        if len(frames) != want:
+            raise RuntimeError("%s 的帧数不是 %d" % (subdir, want))
         for frame in frames:
             path = build_dir / subdir / str(frame.get("file") or "")
             if not path.is_file() or path.stat().st_size < 1000:
                 raise RuntimeError("图片缺失或为空：%s" % path)
-    log("构建校验通过：%d 个产品，每产品 %d 帧" % (len(expected), len(gfs_chart.LEADS)))
+    log("构建校验通过：%d 个产品（单帧产品 %d 个）"
+        % (len(expected), sum(1 for x in expected.values() if x.get("kind") == "overview")))
 
 
 def publish_build(build_dir: Path) -> None:

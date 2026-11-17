@@ -228,9 +228,13 @@
     els.metaCoverage.textContent = coverage;
     els.metaLevel.textContent = level || "—";
     els.metaRun.textContent = data.run || "—";
-    els.productNote.textContent = level
-      ? level + " · 每 " + intervalText + "一帧 · 共 " + state.frames.length + " 帧"
-      : "每 " + intervalText + "一帧";
+    if (String(data.kind || product.kind) === "overview") {
+      els.productNote.textContent = (level || "20 小图总览") + " · 每次起报 1 张";
+    } else {
+      els.productNote.textContent = level
+        ? level + " · 每 " + intervalText + "一帧 · 共 " + state.frames.length + " 帧"
+        : "每 " + intervalText + "一帧";
+    }
   }
 
   function fillProducts() {
@@ -242,9 +246,10 @@
 
   function fillTimeSelect() {
     if (!els.timeSelect) return;
+    const isOverview = String((state.productMeta || {}).kind) === "overview";
     els.timeSelect.innerHTML = state.frames.map((frame, i) =>
       '<option value="' + i + '">' + escapeHtml(localText(frame)) +
-      " · +" + leadHours(frame) + "h</option>"
+      (isOverview ? " · 20 小图总览" : " · +" + leadHours(frame) + "h") + "</option>"
     ).join("");
   }
 
@@ -288,7 +293,8 @@
     els.axisEnd.textContent = state.frames.length ? shortLocal(state.frames[state.frames.length - 1]) : "—";
     if (els.timeSelect && total) els.timeSelect.value = String(state.idx);
     els.requestInfo.textContent = frame
-      ? localText(frame) + " 北京时间 · 起报 " + state.run + " · +" + leadHours(frame) + "h"
+      ? localText(frame) + " 北京时间 · 起报 " + state.run +
+        (String((state.productMeta || {}).kind) === "overview" ? "" : " · +" + leadHours(frame) + "h")
       : "—";
     updateTransport();
   }

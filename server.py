@@ -278,6 +278,23 @@ PRODUCTS = [
 
 DEFAULT_PRODUCT = "gfs-southchina"
 
+# 每个产品再挂一个「20 帧总览」入口
+for _p in list(PRODUCTS):
+    PRODUCTS.append({
+        "id": _p["id"] + "-overview",
+        "source": _p["source"],
+        "name": "20 帧总览",
+        "title": _p["title"] + " · 20 帧总览",
+        "kind": "overview",
+        "interval": 720,
+        "coverage": _p["coverage"],
+        "level": "20 小图（+12–240h，每 12h）",
+        "page": GFS_PAGE,
+        "defaultWindow": 1440,
+        "forecast": True,
+        "subdir": _p["subdir"] + "-overview",
+    })
+
 PRODUCT_MAP = {p["id"]: p for p in PRODUCTS}
 DEFAULT_PRODUCT = "gfs-southchina"
 
