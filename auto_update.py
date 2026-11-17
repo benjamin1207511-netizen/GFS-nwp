@@ -167,10 +167,10 @@ def validate_build(build_dir: Path, run_text: str) -> None:
     if not build_dir.is_dir():
         raise RuntimeError("构建目录不存在：%s" % build_dir)
 
-    expected = {
-        spec["subdir"]: spec
-        for spec in gfs_chart.PRODUCTS.values()
-    }
+    expected = {}
+    for spec in gfs_chart.PRODUCTS.values():
+        expected[spec["subdir"]] = spec
+        expected[spec["subdir"] + "-overview"] = {"kind": "overview"}
     actual = {p.name for p in build_dir.iterdir() if p.is_dir()}
     missing = set(expected) - actual
     extra = actual - set(expected)

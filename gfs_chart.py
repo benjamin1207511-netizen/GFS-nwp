@@ -66,8 +66,8 @@ DEFAULT_DOMAIN = "sc"
 WEST, SOUTH, EAST, NORTH = 105.0, 16.0, 121.0, 28.0
 FINE_STEP = 0.25
 # 240h 数据量较大，下载网格按 domain 的 fetch_step；绘图用 fine_step。
-LEADS = list(range(12, 241, 6))          # +12h … +240h，每 6 小时一帧，共 39 帧
-OVERVIEW_STEPS = list(range(12, 241, 12))  # 总览：每 12 小时一个小图，共 20 个
+LEADS = list(range(24, 241, 6))           # +24h … +240h，每 6 小时一帧，共 37 帧
+OVERVIEW_STEPS = list(range(24, 241, 12))  # 总览：每 12 小时一个小图，共 19 个
 GFS_FILTER = {
     "0p25": "https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl",
     "1p00": "https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_1p00.pl",
@@ -177,19 +177,6 @@ PRODUCTS = {
         "kind": "cloud",
     },
 }
-
-
-# 每个产品配一个「20 帧总览」产品：4×5 拼图，单独一个页面
-_BASE_PRODUCTS = dict(PRODUCTS)
-for _pid, _spec in _BASE_PRODUCTS.items():
-    PRODUCTS[_pid + "_overview"] = {
-        "subdir": _spec["subdir"] + "-overview",
-        "prefix": "gfs_%s_overview_" % _pid,
-        "title": _spec["title"] + " · 20-frame Overview",
-        "kind": "overview",
-        "domain": _spec.get("domain", "sc"),
-        "base": _pid,
-    }
 
 RAIN_6H_LEVELS = [0.1, 1, 4, 13, 25, 60, 120, 250]
 RAIN_6H_COLORS = [
@@ -1133,7 +1120,7 @@ def _render_product_job(product_id: str, run_iso: str, out_dir_str: str) -> str:
 # ---------------------------------------------------------------- overview
 
 def _legend(product_id: str):
-    """返回该产品色标的 (cmap, levels, ticks, labels, label, extend)。"""
+    """返回该产品色标的 (cmap, levels, ticks, label, extend)。"""
     import matplotlib
     from matplotlib.colors import ListedColormap
 
@@ -1155,12 +1142,11 @@ def _legend(product_id: str):
     }
     levels, colors, extend, label = spec[product_id]
     cmap = ListedColormap(colors) if isinstance(colors, list) else matplotlib.colormaps[colors]
-    ticks = [str(x) for x in levels]
-    return cmap, levels, ticks, label, extend
+    return cmap, levels, [str(x) for x in levels], label, extend
 
 
 def make_overview(product_id: str, run_dt: datetime, out_dir: Path) -> Path | None:
-    """把某个产品 +12…+240h 每 12h 的 20 张单帧图拼成 4×5 总览。"""
+    """把某个产品 +24…+240h 每 12h 的 19 张单帧图拼成 5×4 总览。"""
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.image as mpimg
@@ -1169,29 +1155,28 @@ def make_overview(product_id: str, run_dt: datetime, out_dir: Path) -> Path | No
     from matplotlib.cm import ScalarMappable
     from matplotlib.figure import Figure
 
-    base = PRODUCTS[product_id]["base"]
-    base_spec = PRODUCTS[base]
-    panel_dir = out_dir / base_spec["subdir"]
+    spec = PRODUCTS[product_id]
+    panel_dir = out_dir / spec["subdir"]
     panels = []
     for step in OVERVIEW_STEPS:
         valid = run_dt + timedelta(hours=step)
-        path = panel_dir / (base_spec["prefix"] + valid.strftime("%Y%m%d%H") + ".png")
+        path = panel_dir / (spec["prefix"] + valid.strftime("%Y%m%d%H") + ".png")
         if path.exists():
             panels.append((step, path))
     if not panels:
-        log("总览：%s 没有可用的单帧图" % base)
+        log("总览：%s 没有可用的单帧图" % product_id)
         return None
     if len(panels) < len(OVERVIEW_STEPS):
         log("总览：%s 缺 %d 个时次，按已有 %d 个拼图"
-            % (base, len(OVERVIEW_STEPS) - len(panels), len(panels)))
+            % (product_id, len(OVERVIEW_STEPS) - len(panels), len(panels)))
 
     fig = Figure(figsize=(13.2, 10.2), dpi=150, facecolor="white")
     FigureCanvasAgg(fig)
     fig.text(0.035, 0.975,
-             "NOAA GFS · " + base_spec["title"],
+             "NOAA GFS · " + spec["title"],
              fontsize=14, fontweight="bold", ha="left", va="top")
     fig.text(0.975, 0.975,
-             "%s UTC  ·  +12–240 h" % run_dt.strftime("%Y-%m-%d %H"),
+             "%s UTC  ·  +24–240 h" % run_dt.strftime("%Y-%m-%d %H"),
              fontsize=10.5, ha="right", va="top")
 
     # 单帧图 1400×1008，地图轴 rect=[0.065, 0.075, 0.80, 0.80]
@@ -1213,7 +1198,7 @@ def make_overview(product_id: str, run_dt: datetime, out_dir: Path) -> Path | No
         ax.set_axis_off()
         ax.set_title("+%dh" % step, fontsize=9.5, loc="left", pad=2, color="#111111")
 
-    cmap, levels, ticks, label, extend = _legend(base)
+    cmap, levels, ticks, label, extend = _legend(product_id)
     norm = BoundaryNorm(levels, cmap.N)
     sm = ScalarMappable(norm=norm, cmap=cmap)
     sm.set_array([])
@@ -1226,7 +1211,7 @@ def make_overview(product_id: str, run_dt: datetime, out_dir: Path) -> Path | No
     fig.text(0.035, 0.015, "Init: %s UTC" % run_dt.strftime("%Y-%m-%d %H"),
              fontsize=7.5, color="#666", ha="left", va="bottom")
 
-    out_path = out_dir / PRODUCTS[product_id]["subdir"] / "overview.png"
+    out_path = out_dir / (spec["subdir"] + "-overview") / "overview.png"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(out_path, dpi=150, facecolor="white")
     fig.clf()
@@ -1236,7 +1221,7 @@ def make_overview(product_id: str, run_dt: datetime, out_dir: Path) -> Path | No
 
 def write_overview_manifest(product_id: str, run_dt: datetime, out_dir: Path) -> None:
     spec = PRODUCTS[product_id]
-    subdir = out_dir / spec["subdir"]
+    subdir = out_dir / (spec["subdir"] + "-overview")
     stamp = run_dt.strftime("%Y%m%d%H")
     payload = {
         "product": product_id,
@@ -1245,10 +1230,10 @@ def write_overview_manifest(product_id: str, run_dt: datetime, out_dir: Path) ->
         "generated": datetime.now(TZ_CN).strftime("%Y-%m-%d %H:%M HKT"),
         "source": "NOAA GFS via NOMADS",
         "region": {
-            "west": DOMAINS[spec["domain"]]["west"],
-            "south": DOMAINS[spec["domain"]]["south"],
-            "east": DOMAINS[spec["domain"]]["east"],
-            "north": DOMAINS[spec["domain"]]["north"],
+            "west": DOMAINS[spec.get("domain", DEFAULT_DOMAIN)]["west"],
+            "south": DOMAINS[spec.get("domain", DEFAULT_DOMAIN)]["south"],
+            "east": DOMAINS[spec.get("domain", DEFAULT_DOMAIN)]["east"],
+            "north": DOMAINS[spec.get("domain", DEFAULT_DOMAIN)]["north"],
         },
         "frames": [{
             "s": stamp,
@@ -1419,10 +1404,8 @@ def main() -> None:
         log("已更新 %s" % (subdir / "manifest.json"))
 
     for product_id in selected:
-        ov_id = product_id + "_overview"
-        if ov_id in PRODUCTS:
-            if make_overview(ov_id, run_dt, out_dir) is not None:
-                write_overview_manifest(ov_id, run_dt, out_dir)
+        if make_overview(product_id, run_dt, out_dir) is not None:
+            write_overview_manifest(product_id, run_dt, out_dir)
 
 
 if __name__ == "__main__":

@@ -277,23 +277,8 @@ PRODUCTS = [
 ]
 
 DEFAULT_PRODUCT = "gfs-southchina"
-
-# 每个产品再挂一个「20 帧总览」入口
-for _p in list(PRODUCTS):
-    PRODUCTS.append({
-        "id": _p["id"] + "-overview",
-        "source": _p["source"],
-        "name": "20 帧总览",
-        "title": _p["title"] + " · 20 帧总览",
-        "kind": "overview",
-        "interval": 720,
-        "coverage": _p["coverage"],
-        "level": "20 小图（+12–240h，每 12h）",
-        "page": GFS_PAGE,
-        "defaultWindow": 1440,
-        "forecast": True,
-        "subdir": _p["subdir"] + "-overview",
-    })
+OVERVIEW_SUFFIX = "-overview"
+OVERVIEW_LEVEL = "19 帧总览 · +24h…+240h 每 12 小时"
 
 PRODUCT_MAP = {p["id"]: p for p in PRODUCTS}
 DEFAULT_PRODUCT = "gfs-southchina"
@@ -333,12 +318,15 @@ _cache_lock = threading.Lock()
 _frames_cache: dict[str, dict] = {}
 
 
-def load_frames(pid: str) -> dict:
+def load_frames(pid: str, overview: bool = False) -> dict:
     product = PRODUCT_MAP[pid]
     subdir = str(product.get("subdir") or "")
+    if overview:
+        subdir += OVERVIEW_SUFFIX
     manifest_path = GFS_DIR / subdir / "manifest.json"
     if not manifest_path.is_file():
-        raise RuntimeError("GFS 图尚未生成，请先运行 gfs_chart.py")
+        raise RuntimeError("GFS 总览图尚未生成，请先运行 gfs_chart.py" if overview
+                           else "GFS 图尚未生成，请先运行 gfs_chart.py")
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
 
     frames = []
@@ -377,26 +365,27 @@ def load_frames(pid: str) -> dict:
     }
 
 
-def get_frames(pid: str, force: bool = False) -> dict:
+def get_frames(pid: str, force: bool = False, overview: bool = False) -> dict:
     now = time.time()
+    key = pid + OVERVIEW_SUFFIX if overview else pid
     with _cache_lock:
-        hit = _frames_cache.get(pid)
+        hit = _frames_cache.get(key)
         if hit and not force and now - hit["fetched"] < CACHE_TTL:
             return hit
         try:
-            data = load_frames(pid)
+            data = load_frames(pid, overview=overview)
         except Exception:
             if hit:
                 stale = dict(hit)
                 stale["stale"] = True
                 return stale
             raise
-        _frames_cache[pid] = data
+        _frames_cache[key] = data
         return data
 
 
-def resolve_frame(pid: str, stamp: str) -> dict | None:
-    data = get_frames(pid)
+def resolve_frame(pid: str, stamp: str, overview: bool = False) -> dict | None:
+    data = get_frames(pid, overview=overview)
     for frame in data["frames"]:
         if frame["s"] == stamp:
             return frame
@@ -498,10 +487,12 @@ class Handler(BaseHTTPRequestHandler):
         if pid not in PRODUCT_MAP:
             return self._json({"error": "未知产品 %s" % pid}, 400)
         force = (qs.get("force") or ["0"])[0] in ("1", "true")
+        overview = (qs.get("view") or [""])[0] == "overview"
         try:
-            data = get_frames(pid, force=force)
+            data = get_frames(pid, force=force, overview=overview)
         except Exception as exc:  # noqa: BLE001
-            return self._json({"error": "无法读取 GFS 图：%s" % exc}, 502)
+            return self._json({"error": "无法读取 GFS 总览图：%s" % exc if overview
+                               else "无法读取 GFS 图：%s" % exc}, 502)
 
         frames = data["frames"]
         if not frames:
@@ -512,13 +503,14 @@ class Handler(BaseHTTPRequestHandler):
         self._json(
             {
                 "product": pid,
-                "title": product["title"],
+                "title": product["title"] + " · 总览" if overview else product["title"],
                 "source": product["source"],
                 "sourceName": "NOAA GFS",
-                "kind": product["kind"],
-                "interval": product["interval"],
+                "kind": "overview" if overview else product["kind"],
+                "interval": 720 if overview else product["interval"],
                 "coverage": product["coverage"],
-                "level": product["level"],
+                "level": OVERVIEW_LEVEL if overview else product["level"],
+                "overview": overview,
                 "page": product["page"],
                 "forecast": True,
                 "run": data.get("run"),
@@ -536,9 +528,10 @@ class Handler(BaseHTTPRequestHandler):
         pid = (qs.get("p") or [""])[0]
         stamp = (qs.get("s") or [""])[0]
         dl = (qs.get("dl") or ["0"])[0] in ("1", "true")
+        overview = (qs.get("view") or [""])[0] == "overview"
         if pid not in PRODUCT_MAP or not STAMP_RE.fullmatch(stamp or ""):
             return self._json({"error": "参数不合法"}, 400)
-        frame = resolve_frame(pid, stamp)
+        frame = resolve_frame(pid, stamp, overview=overview)
         if not frame:
             return self._json({"error": "图像不存在"}, 404)
 

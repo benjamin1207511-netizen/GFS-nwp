@@ -46,6 +46,7 @@
     timeSelect: $("timeSelect"),
     speedSelect: $("speedSelect"),
     btnLoop: $("btnLoop"),
+    btnOverview: $("btnOverview"),
     btnApply: $("btnApply"),
     btnDownload: $("btnDownload"),
     btnDownloadIcon: $("btnDownloadIcon"),
@@ -71,6 +72,7 @@
     playing: false,
     speed: 1,
     loop: true,
+    overview: false,
     timer: null,
     autoTimer: null,
     reqSeq: 0,
@@ -204,7 +206,7 @@
 
   function imgUrl(frame) {
     return "/api/img?p=" + encodeURIComponent(state.product) + "&s=" + encodeURIComponent(frame.s) +
-      "&v=" + encodeURIComponent(IMG_VERSION);
+      "&v=" + encodeURIComponent(IMG_VERSION) + (state.overview ? "&view=overview" : "");
   }
 
   function downloadUrl() {
@@ -229,7 +231,7 @@
     els.metaLevel.textContent = level || "—";
     els.metaRun.textContent = data.run || "—";
     if (String(data.kind || product.kind) === "overview") {
-      els.productNote.textContent = (level || "20 小图总览") + " · 每次起报 1 张";
+      els.productNote.textContent = (level || "19 帧总览") + " · 点“单帧”回到时间轴";
     } else {
       els.productNote.textContent = level
         ? level + " · 每 " + intervalText + "一帧 · 共 " + state.frames.length + " 帧"
@@ -249,7 +251,7 @@
     const isOverview = String((state.productMeta || {}).kind) === "overview";
     els.timeSelect.innerHTML = state.frames.map((frame, i) =>
       '<option value="' + i + '">' + escapeHtml(localText(frame)) +
-      (isOverview ? " · 20 小图总览" : " · +" + leadHours(frame) + "h") + "</option>"
+      (isOverview ? " · 19 帧总览" : " · +" + leadHours(frame) + "h") + "</option>"
     ).join("");
   }
 
@@ -440,7 +442,8 @@
     startLoadingBar();
 
     try {
-      const data = await api("/api/frames?p=" + encodeURIComponent(target.id));
+      const data = await api("/api/frames?p=" + encodeURIComponent(target.id) +
+        (state.overview ? "&view=overview" : ""));
       if (token !== state.loadSeq) return;
 
       state.frames = Array.isArray(data.frames) ? data.frames : [];
@@ -485,6 +488,22 @@
     clearTimeout(state.timer);
     state.timer = null;
     updateTransport();
+  }
+
+  function setOverview(on) {
+    state.overview = Boolean(on);
+    if (els.btnOverview) {
+      els.btnOverview.classList.toggle("on", state.overview);
+      els.btnOverview.setAttribute("aria-pressed", state.overview ? "true" : "false");
+      const label = els.btnOverview.querySelector("span");
+      if (label) label.textContent = state.overview ? "总览" : "单帧";
+    }
+  }
+
+  function toggleOverview() {
+    setOverview(!state.overview);
+    if (state.product) loadProduct(state.product, { keepStamp: "", forceReload: true });
+    toast(state.overview ? "已切换到 19 帧总览" : "已切换到单帧时间轴");
   }
 
   function scheduleTick() {
@@ -615,6 +634,7 @@
       if (state.playing) scheduleTick();
     });
 
+    if (els.btnOverview) els.btnOverview.addEventListener("click", toggleOverview);
     els.btnLoop.addEventListener("click", () => {
       state.loop = !state.loop;
       updateTransport();
@@ -705,6 +725,8 @@
         toggleFullscreen();
       } else if (event.key === "r" || event.key === "R") {
         refreshCurrent();
+      } else if (event.key === "o" || event.key === "O") {
+        toggleOverview();
       } else if (event.key === "0") {
         resetZoom();
       } else if (event.key === "+" || event.key === "=") {
