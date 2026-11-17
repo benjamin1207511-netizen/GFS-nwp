@@ -1140,7 +1140,8 @@ def _legend(product_id: str):
         "rh500": (RH_LEVELS, "YlGnBu", "both", "relative humidity (%)"),
         "cloud": (CLOUD_LEVELS, CLOUD_COLORS, "both", "total cloud cover (tenths)"),
     }
-    levels, colors, extend, label = spec[product_id]
+    key = product_id[:-3] if product_id.endswith("_ea") else product_id
+    levels, colors, extend, label = spec[key]
     cmap = ListedColormap(colors) if isinstance(colors, list) else matplotlib.colormaps[colors]
     return cmap, levels, [str(x) for x in levels], label, extend
 
@@ -1170,30 +1171,39 @@ def make_overview(product_id: str, run_dt: datetime, out_dir: Path) -> Path | No
         log("总览：%s 缺 %d 个时次，按已有 %d 个拼图"
             % (product_id, len(OVERVIEW_STEPS) - len(panels), len(panels)))
 
+    # 单帧图 1400×1008，只裁地图轴那一块（不要标题、坐标标签和右侧色标）。
+    first = mpimg.imread(panels[0][1])
+    h, w = first.shape[:2]
+    x0, x1 = int(0.065 * w) + 3, int(0.865 * w) - 1
+    y0, y1 = int((1 - 0.875) * h), int((1 - 0.075) * h)
+
     fig = Figure(figsize=(13.2, 10.2), dpi=150, facecolor="white")
     FigureCanvasAgg(fig)
-    fig.text(0.035, 0.975,
-             "NOAA GFS · " + spec["title"],
-             fontsize=14, fontweight="bold", ha="left", va="top")
-    fig.text(0.975, 0.975,
-             "%s UTC  ·  +24–240 h" % run_dt.strftime("%Y-%m-%d %H"),
+    fig.text(0.035, 0.985, spec["title"], fontsize=15, fontweight="bold",
+             ha="left", va="top")
+    fig.text(0.975, 0.985,
+             "%s UTC  ·  +%dh → +%dh  ·  %d frames"
+             % (run_dt.strftime("%Y-%m-%d %H"), OVERVIEW_STEPS[0],
+                OVERVIEW_STEPS[-1], len(panels)),
              fontsize=10.5, ha="right", va="top")
-
-    # 单帧图 1400×1008，地图轴 rect=[0.065, 0.075, 0.80, 0.80]
-    x0, x1 = int(0.065 * 1400), int(0.865 * 1400)
-    y0, y1 = int((1 - 0.875) * 1008), int((1 - 0.075) * 1008)
+    fig.text(0.035, 0.955, "NOAA GFS 0.25°",
+             fontsize=9, color="#555", ha="left", va="top")
 
     cols, rows = 5, 4
     left, right = 0.035, 0.975
-    gap = 0.012
-    width = (right - left - gap * (cols - 1)) / cols
-    height = width * (13.2 / 10.2) / ((x1 - x0) / (y1 - y0))
-    top_y = 0.90
-    row_gap = 0.025
-    for index, (step, path) in enumerate(panels[:cols * rows]):
+    gap, row_gap = 0.012, 0.022
+    top_y = 0.91
+    aspect = (x1 - x0) / (y1 - y0)
+    slot = (right - left - gap * (cols - 1)) / cols
+    max_h = (top_y - 0.16 - row_gap * (rows - 1)) / rows
+    height = min(slot * (13.2 / 10.2) / aspect, max_h)
+    width = height * (10.2 / 13.2) * aspect
+    grid_w = cols * width + (cols - 1) * gap
+    x_start = left + (right - left - grid_w) / 2
+    for index, (step, path) in enumerate(panels[: cols * rows]):
         row, col = divmod(index, cols)
         y = top_y - (row + 1) * height - row * row_gap
-        ax = fig.add_axes([left + col * (width + gap), y, width, height])
+        ax = fig.add_axes([x_start + col * (width + gap), y, width, height])
         ax.imshow(mpimg.imread(path)[y0:y1, x0:x1])
         ax.set_axis_off()
         ax.set_title("+%dh" % step, fontsize=9.5, loc="left", pad=2, color="#111111")
@@ -1202,12 +1212,13 @@ def make_overview(product_id: str, run_dt: datetime, out_dir: Path) -> Path | No
     norm = BoundaryNorm(levels, cmap.N)
     sm = ScalarMappable(norm=norm, cmap=cmap)
     sm.set_array([])
-    cax = fig.add_axes([0.28, 0.09, 0.44, 0.012])
+    cax = fig.add_axes([0.28, 0.075, 0.44, 0.012])
     cb = fig.colorbar(sm, cax=cax, orientation="horizontal", ticks=levels, extend=extend)
     cb.ax.tick_params(labelsize=8, length=2)
     cb.set_ticklabels(ticks)
     cb.set_label(label, fontsize=8, labelpad=3)
-    fig.text(0.975, 0.015, "NOAA GFS · NOMADS", fontsize=9, ha="right", va="bottom")
+
+    fig.text(0.975, 0.015, "NOAA GFS · NOMADS", fontsize=10, ha="right", va="bottom")
     fig.text(0.035, 0.015, "Init: %s UTC" % run_dt.strftime("%Y-%m-%d %H"),
              fontsize=7.5, color="#666", ha="left", va="bottom")
 
