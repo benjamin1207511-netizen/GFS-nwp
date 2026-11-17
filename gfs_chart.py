@@ -715,7 +715,7 @@ def finish_figure(fig, ax, cf, colorbar_ticks, colorbar_labels, colorbar_title,
         fontsize=8, color="#666", ha="left", va="bottom",
     )
     fig.text(
-        0.955, 0.032, "NOAA GFS · NOMADS",
+        0.955, 0.032, "www.bamc.top",
         fontsize=9, color="#000000", ha="right", va="bottom",
     )
     cax = fig.add_axes([0.885, 0.16, 0.022, 0.62])
@@ -1218,7 +1218,7 @@ def make_overview(product_id: str, run_dt: datetime, out_dir: Path) -> Path | No
     cb.set_ticklabels(ticks)
     cb.set_label(label, fontsize=8, labelpad=3)
 
-    fig.text(0.975, 0.015, "NOAA GFS · NOMADS", fontsize=10, ha="right", va="bottom")
+    fig.text(0.975, 0.015, "www.bamc.top", fontsize=10, ha="right", va="bottom")
     fig.text(0.035, 0.015, "Init: %s UTC" % run_dt.strftime("%Y-%m-%d %H"),
              fontsize=7.5, color="#666", ha="left", va="bottom")
 
