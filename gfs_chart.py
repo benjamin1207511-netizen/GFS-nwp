@@ -307,10 +307,10 @@ def probe_run(run_iso: str, step: int = 240) -> bool:
 
 
 def latest_run() -> str:
-    """最新的、已经出到 +240h 的 GFS 起报场（00/06/12/18Z）。"""
+    """最新的、已经出到 +240h 的 GFS 起报场（只取 00Z / 12Z）。"""
     now = datetime.now(UTC).replace(minute=0, second=0, microsecond=0)
-    block = now.replace(hour=(now.hour // 6) * 6)
-    for offset in range(0, 96, 6):
+    block = now.replace(hour=(now.hour // 12) * 12)
+    for offset in range(0, 96, 12):
         cand = block - timedelta(hours=offset)
         run = _fmt_run(cand)
         log("检查 GFS 起报场 %s" % run)

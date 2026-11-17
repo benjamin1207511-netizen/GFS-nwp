@@ -47,7 +47,7 @@ LOG_FILE = BASE_DIR / "auto_update.log"
 TZ_CN = timezone(timedelta(hours=8))
 UTC = timezone.utc
 POLL_SECONDS = 30 * 60
-# NOAA GFS 每天 00/06/12/18Z 四个起报场。
+# NOAA GFS 每天 00Z / 12Z 两个起报场（本项目只跑这两个）。
 # 单次更新失败（多半是网络抖动）后的重试次数与等待秒数，可用环境变量覆盖。
 BUILD_RETRIES = max(1, int(os.environ.get("GFS_BUILD_RETRIES", "3")))
 RETRY_WAIT = max(10, int(os.environ.get("GFS_RETRY_WAIT", "120")))
