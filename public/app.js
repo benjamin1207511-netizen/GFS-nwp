@@ -455,7 +455,7 @@
       fillTimeSelect();
 
       let index = previousStamp ? frameForStamp(previousStamp) : -1;
-      if (index < 0) index = state.frames.length - 1;
+      if (index < 0) index = 0;  // 默认最早一帧，按时间正序播放
       showFrame(index, Boolean(opts.forceReload));
 
       if (!opts.silent) {
