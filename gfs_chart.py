@@ -48,7 +48,11 @@ BASE_DIR = Path(__file__).resolve().parent
 OUT_DIR = BASE_DIR / "gfs"
 TZ_CN = timezone(timedelta(hours=8))
 UTC = timezone.utc
-UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/126 Safari/537.36"
+# NOMADS 要求客户端在 UA 里标明身份和联系方式；用浏览器 UA 抓数据容易被判滥用。
+UA = "bamc-gfs/1.0 (https://gfs.bamc.top; contact benjamin1207511@gmail.com)"
+MIN_INTERVAL = float(os.environ.get("GFS_MIN_INTERVAL", "1.0"))  # 两次请求的最小间隔（秒）
+_RATE_LOCK = threading.Lock()
+_LAST_REQUEST = [0.0]
 
 DOMAINS = {
     # 默认华南范围：16–28°N，105–121°E（0.5° 输入、0.25° 绘图，精度翻倍）
@@ -243,7 +247,17 @@ def grid_points(step: float = FINE_STEP, domain: str | None = None):
     return lats, lons
 
 
+def _throttle() -> None:
+    """全局限速：所有线程合计每 MIN_INTERVAL 秒最多发一个请求。"""
+    with _RATE_LOCK:
+        wait = MIN_INTERVAL - (time.time() - _LAST_REQUEST[0])
+        if wait > 0:
+            time.sleep(wait)
+        _LAST_REQUEST[0] = time.time()
+
+
 def fetch(url: str, timeout: int = 180) -> bytes:
+    _throttle()
     req = urllib.request.Request(
         url,
         headers={
@@ -257,7 +271,7 @@ def fetch(url: str, timeout: int = 180) -> bytes:
 
 
 RETRY_DELAYS = (5, 10, 20, 30, 45, 60)
-FETCH_WORKERS = max(1, int(os.environ.get("GFS_FETCH_WORKERS", "4")))
+FETCH_WORKERS = max(1, int(os.environ.get("GFS_FETCH_WORKERS", "2")))
 _ECC_LOCK = threading.Lock()
 
 
@@ -343,10 +357,13 @@ def _download_step(run_dt: datetime, domain: str, step: int) -> Path:
             return path
         except Exception as exc:  # noqa: BLE001
             last_error = exc
-            log("  %s step %3dh 第 %d 次失败：%s" % (domain, step, 1, exc))
+            text = str(exc)
+            limited = "403" in text or "429" in text or "Too Many" in text
+            log("  %s step %3dh 第 %d 次失败：%s%s"
+                % (domain, step, 1, exc, "（疑似被限流，等待 5 分钟）" if limited else ""))
             if delay is None:
                 break
-            time.sleep(delay)
+            time.sleep(300 if limited else delay)
     raise RuntimeError("%s step %d 下载失败：%s" % (domain, step, last_error))
 
 
