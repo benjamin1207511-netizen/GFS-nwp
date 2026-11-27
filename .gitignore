@@ -17,3 +17,8 @@ __pycache__/
 *.tmp
 .DS_Store
 Thumbs.db
+
+srv*.log
+srv*.err
+test_out/
+_*.png
