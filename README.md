@@ -131,9 +131,38 @@ GFS-nwp/
 | --- | --- | --- |
 | `PORT` | 8787 | 监听端口 |
 | `TRUST_PROXY` | `0` | 反向代理后设为 `1` |
-| `ANTIBOT_SECRET` | 随机 | Cookie 签名密钥 |
-| `GFS_FETCH_WORKERS` | `4` | GRIB 下载并发数 |
+| `ANTIBOT_SECRET` | 随机 | Cookie 签名密钥（生产环境务必固定） |
+| `ANTIBOT_LOG` | `1` | `0` 关闭拦截日志 |
+| `RATE_GLOBAL` / `RATE_HTML` / `RATE_API` / `RATE_IMAGE` | 420 / 60 / 180 / 360 | 每 60 秒限额 |
+| `GFS_FETCH_WORKERS` | `2` | GRIB 下载并发数 |
+| `GFS_MIN_INTERVAL` | `1.0` | 两次 NOMADS 请求的最小间隔（秒），不要低于 1 |
 | `GFS_BUILD_RETRIES` | `3` | 自动更新失败重试次数 |
+
+## 部署安全清单
+
+反向代理（nginx）后面部署时，建议逐条确认：
+
+```nginx
+location / {
+    proxy_pass http://127.0.0.1:8787;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;          # 必须覆盖，应用只信这个头
+    proxy_set_header X-Forwarded-For $remote_addr;    # 不要用 $proxy_add_x_forwarded_for
+    proxy_set_header X-Forwarded-Proto $scheme;
+
+    limit_req zone=gfs burst=30 nodelay;              # 再叠一层 nginx 限速
+    gzip on;
+    gzip_types text/css application/javascript application/json text/html;
+}
+```
+
+- 应用进程设置 `TRUST_PROXY=1`、固定的 `ANTIBOT_SECRET=...`，并只监听 `127.0.0.1`
+- 确认 `X-Real-IP` 在 nginx 里被强制改写，否则客户端可以伪造 IP 绕过限速
+- 用 `check_stale.py` 做监控，cron 每 30 分钟跑一次：
+
+```bash
+*/30 * * * * cd /path/to/GFS-nwp && python3 check_stale.py --max-age 12 || echo "GFS 数据过期" | mail -s "GFS 告警" you@example.com
+```
 
 ## 数据与声明
 

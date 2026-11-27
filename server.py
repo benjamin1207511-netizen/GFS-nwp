@@ -18,6 +18,7 @@ import math
 import mimetypes
 import os
 import re
+import shutil
 import socket
 import sys
 import threading
@@ -394,6 +395,7 @@ def resolve_frame(pid: str, stamp: str, overview: bool = False) -> dict | None:
 
 class Handler(BaseHTTPRequestHandler):
     server_version = "NOAAGFS/1.0"
+    timeout = 20  # 单个连接最多阻塞 20 秒，缓解 slowloris
     protocol_version = "HTTP/1.1"
 
     def _send(self, status: int, body: bytes, ctype: str, headers: dict | None = None) -> None:
@@ -413,6 +415,41 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(body)
             except (BrokenPipeError, ConnectionResetError):
                 pass
+
+    def _send_file(self, target: Path, ctype: str, cache: str,
+                   extra: dict | None = None) -> None:
+        """带 ETag / 304 的文件响应，分块发送避免整文件读入内存。"""
+        stat = target.stat()
+        etag = '"%x-%x"' % (int(stat.st_mtime), stat.st_size)
+        if self.headers.get("If-None-Match") == etag:
+            self.send_response(304)
+            self.send_header("ETag", etag)
+            self.send_header("Cache-Control", cache)
+            for key, value in SECURITY_HEADERS.items():
+                self.send_header(key, value)
+            self.end_headers()
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(stat.st_size))
+        self.send_header("ETag", etag)
+        self.send_header("Last-Modified", self.date_time_string(stat.st_mtime))
+        self.send_header("Cache-Control", cache)
+        self.send_header("X-Content-Type-Options", "nosniff")
+        for key, value in SECURITY_HEADERS.items():
+            self.send_header(key, value)
+        if getattr(self, "_set_cookie", ""):
+            self.send_header("Set-Cookie", self._set_cookie)
+        for key, value in (extra or {}).items():
+            self.send_header(key, value)
+        self.end_headers()
+        if self.command == "HEAD":
+            return
+        try:
+            with target.open("rb") as fh:
+                shutil.copyfileobj(fh, self.wfile, 64 * 1024)
+        except (BrokenPipeError, ConnectionResetError):
+            pass
 
     def _json(self, obj, status: int = 200, cache: str = "no-store") -> None:
         body = json.dumps(obj, ensure_ascii=False).encode("utf-8")
@@ -452,9 +489,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/api/img":
                 return self.api_img(qs)
             if path == "/api/health":
-                with _cache_lock:
-                    cached = sorted(_frames_cache)
-                return self._json({"ok": True, "products": cached})
+                return self._json({"ok": True})
+            if path == "/favicon.ico":
+                return self._send(204, b"", "text/plain; charset=utf-8")
             if path == "/healthz":
                 return self._send(200, b"ok", "text/plain; charset=utf-8", {"Cache-Control": "no-store"})
             return self.serve_static(path)
@@ -463,7 +500,7 @@ class Handler(BaseHTTPRequestHandler):
         except Exception as exc:  # noqa: BLE001
             log("处理 %s 出错：%r" % (self.path, exc))
             try:
-                self._json({"error": str(exc)}, 500)
+                self._json({"error": "internal error"}, 500)
             except Exception:
                 pass
 
@@ -491,8 +528,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             data = get_frames(pid, force=force, overview=overview)
         except Exception as exc:  # noqa: BLE001
-            return self._json({"error": "无法读取 GFS 总览图：%s" % exc if overview
-                               else "无法读取 GFS 图：%s" % exc}, 502)
+            return self._json({"error": "总览图暂不可用" if overview else "图像暂不可用"}, 502)
 
         frames = data["frames"]
         if not frames:
@@ -542,18 +578,18 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"error": "图像路径不合法"}, 400)
         if not target.is_file():
             return self._json({"error": "图像文件不存在"}, 404)
-        data = target.read_bytes()
         mime = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
-        # 图片文件名在重新生成后通常保持不变，不能使用 immutable 长缓存。
-        headers = {"Cache-Control": "no-cache"}
+        # 图片文件名在重新生成后通常保持不变，用 ETag 做协商缓存。
+        extra = {}
+        cache = "no-cache"
         if dl:
             fname = "%s_%s.png" % (pid, stamp)
-            headers["Content-Disposition"] = (
+            extra["Content-Disposition"] = (
                 "attachment; filename=\"%s\"; filename*=UTF-8''%s"
                 % (fname, urllib.parse.quote(fname))
             )
-            headers["Cache-Control"] = "no-store"
-        self._send(200, data, mime, headers)
+            cache = "no-store"
+        self._send_file(target, mime, cache, extra)
 
     def serve_static(self, path: str) -> None:
         if path in ("/", ""):
@@ -576,7 +612,8 @@ class Handler(BaseHTTPRequestHandler):
         ctype = mimetypes.guess_type(target.name)[0] or "application/octet-stream"
         if ctype.startswith("text/") or ctype in ("application/javascript", "application/json"):
             ctype += "; charset=utf-8"
-        self._send(200, target.read_bytes(), ctype, {"Cache-Control": "no-cache"})
+        cache = "no-cache" if target.name == "index.html" else "public, max-age=3600"
+        self._send_file(target, ctype, cache)
 
 
 class Server(ThreadingHTTPServer):

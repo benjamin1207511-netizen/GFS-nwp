@@ -609,3 +609,6 @@ button:disabled { opacity: .42; cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) {
   .layer, .loadbar span, .toast, .placeholder { transition: none !important; }
 }
+
+.hint.warn { color: #b45309; font-weight: 600; }
+

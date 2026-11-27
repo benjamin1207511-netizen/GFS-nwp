@@ -196,7 +196,8 @@ class RequestGuard:
 
     def client_ip(self, headers, remote_addr: str) -> str:
         if self.trust_proxy:
-            for name in ("CF-Connecting-IP", "X-Real-IP", "X-Forwarded-For"):
+            # 只信任反向代理覆盖写入的头；CF-Connecting-IP 客户端可自带，不能直接用。
+            for name in ("X-Real-IP", "X-Forwarded-For"):
                 value = headers.get(name)
                 if value:
                     return value.split(",")[0].strip()
@@ -308,4 +309,11 @@ SECURITY_HEADERS = {
     "X-Frame-Options": "SAMEORIGIN",
     "X-Robots-Tag": "noindex, nofollow, noarchive",
     "Permissions-Policy": "geolocation=(), microphone=(), camera=()",
+    # 页面没有内联脚本/样式，可以用比较严格的策略。
+    "Content-Security-Policy": (
+        "default-src 'self'; img-src 'self' data:; style-src 'self'; "
+        "script-src 'self'; connect-src 'self'; font-src 'self'; "
+        "frame-ancestors 'self'; base-uri 'none'; object-src 'none'"
+    ),
+    "Cross-Origin-Resource-Policy": "same-origin",
 }

@@ -299,6 +299,12 @@ def run_once(force: bool = False, dry_run: bool = False) -> bool:
         log("dry-run：有新场，但未生成")
         return True
 
+    free = shutil.disk_usage(BASE_DIR).free
+    if free < 1200 * 1024 * 1024:
+        raise RuntimeError(
+            "磁盘剩余 %.0f MB，不足以生成新一套图（约需 1.2 GB）" % (free / 1024 / 1024)
+        )
+
     cmd = [
         sys.executable,
         str(BASE_DIR / "gfs_chart.py"),

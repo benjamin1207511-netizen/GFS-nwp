@@ -237,6 +237,13 @@
         ? level + " · 每 " + intervalText + "一帧 · 共 " + state.frames.length + " 帧"
         : "每 " + intervalText + "一帧";
     }
+    const staleHours = Math.round(Number(data.delayMin || 0) / 60);
+    if (staleHours >= 12) {
+      els.productNote.textContent += " · ⚠ 数据已 " + staleHours + " 小时未更新";
+      els.productNote.classList.add("warn");
+    } else {
+      els.productNote.classList.remove("warn");
+    }
   }
 
   function fillProducts() {
